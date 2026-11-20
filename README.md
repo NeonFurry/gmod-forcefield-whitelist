@@ -137,5 +137,5 @@ THE SOFTWARE.
 
 ## Благодарности
 
-- **bol_snaphak** — оригинальный мод [Bendable Combine Forcefield](https://steamcommunity.com/sharedfiles/filedetails/?id=3824144302) с читаемым кодом, который легко расширять.
+- **[bol](https://steamcommunity.com/id/bol_snaphak)** — оригинальный мод [Bendable Combine Forcefield](https://steamcommunity.com/sharedfiles/filedetails/?id=3824144302) с читаемым кодом, который легко расширять.
 - Адаптация вайтлиста — распространяется под той же Boost Software License 1.0.
