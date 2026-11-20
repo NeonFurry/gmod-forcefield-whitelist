@@ -4,7 +4,7 @@
 ![Game: Garry's Mod](https://img.shields.io/badge/game-Garry's%20Mod-orange.svg)
 
 Аддон для Garry's Mod, добавляющий **вайтлист доступа к силовым полям** из мода
-[Combine Forcefield](https://steamcommunity.com/sharedfiles/filedetails/?id=3824144302) (автор — **bol_snaphak**).
+[Bendable Combine Forcefield](https://steamcommunity.com/sharedfiles/filedetails/?id=3824144302) (автор — **bol_snaphak**).
 
 Оригинальный мод позволяет игнорировать поле только по командам. Этот аддон расширяет доступ:
 
