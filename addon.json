@@ -1,0 +1,6 @@
+{
+	"title": "FFWL — Forcefield Whitelist (Bendable Combine Forcefield)",
+	"type": "ServerContent",
+	"tags": [ "fun", "roleplay" ],
+	"ignore": [ "*.txt", "*.md" ]
+}
