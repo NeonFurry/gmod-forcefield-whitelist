@@ -8,10 +8,10 @@
 
 	Возможности:
 	 - вайтлист игроков (SteamID), редакторов, NPC-классов + штатный вайтлист команд мода;
-	 - меню Forcefield Manager: E по полю, пункт в контекстном меню, ffwl_menu, чат !ffmenu;
+	 - меню Forcefield Manager в тёмном стиле: E по полю, пункт в контекстном меню, ffwl_menu, чат !ffmenu;
 	 - NPC из вайтлиста проходят поле (включая обход ИИ-блокировки в зоне у поля);
-	 - ULX-флаг forcefield_edit (категория Forcefields);
-	 - админ / владелец поля (CPPI) / держатель флага проходят всегда;
+	 - через поле проходят ТОЛЬКО вписанные игроки и редакторы — админ без вписывания не пройдёт;
+	 - админ / ULX-флаг forcefield_edit / владелец поля (CPPI) дают право редактирования списков;
 	 - диагностика: ffwl_scan, ffwl_debug.
 
 	Списки хранятся на самой сущности поля и живут, пока поле существует.
@@ -34,14 +34,13 @@ local function WrapShouldCollideWith(target)
 		if not IsValid(other) then return original(self, other) end
 
 		if other:IsPlayer() then
-			-- Админ, держатель флага и владелец поля проходят всегда
-			if other:IsAdmin() then return false end
-			if ULib and ULib.ucl and ULib.ucl.query(other, "forcefield_edit") then return false end
-			if CPPI and self.CPPIGetOwner and self:CPPIGetOwner() == other then return false end
-
 			-- Поимённый вайтлист игроков
 			local players = self.FFWL_Players
 			if players and players[other:SteamID()] then return false end
+
+			-- Вписанные редакторы
+			local editors = self.FFWL_Editors
+			if editors and editors[other:SteamID()] then return false end
 
 		elseif other:IsNPC() or other:IsNextBot() then
 			-- Вайтлист по классам (npc_vj_automaton_trooper, npc_manhack, ...)
@@ -373,10 +372,25 @@ concommand.Add("ffwl_scan", function(ply)
 end)
 
 --------------------------------------------------------------------
--- CLIENT: меню, поиск поля взглядом, контекстное меню
+-- CLIENT: стилизованное меню, поиск поля взглядом, контекстное меню
 --------------------------------------------------------------------
 
 if CLIENT then
+	surface.CreateFont("FFWL_Title", { font = "Roboto", size = 18, weight = 700, extended = true })
+	surface.CreateFont("FFWL_Tab", { font = "Roboto", size = 14, weight = 600, extended = true })
+	surface.CreateFont("FFWL_Item", { font = "Roboto", size = 14, weight = 500, extended = true })
+
+	local COL_BG      = Color(21, 25, 31)
+	local COL_HEADER  = Color(30, 36, 44)
+	local COL_ROW_A   = Color(28, 33, 41)
+	local COL_ROW_B   = Color(24, 28, 35)
+	local COL_LINE    = Color(48, 58, 70)
+	local COL_TEXT    = Color(214, 224, 232)
+	local COL_DIM     = Color(122, 134, 147)
+	local COL_ACCENT  = Color(0, 188, 212)
+	local COL_ACCENT2 = Color(130, 220, 255)
+	local COL_RED     = Color(232, 84, 84)
+
 	local function ClientCanEdit(ent)
 		local ply = LocalPlayer()
 		if not IsValid(ply) then return false end
@@ -413,6 +427,14 @@ if CLIENT then
 
 	local currentEntity, currentMenu
 	local listData = {}
+	local activeTab = "players"
+
+	local TABS = {
+		{ id = "players", label = "Игроки",      remove = "removeplayer" },
+		{ id = "teams",   label = "Команды",     remove = "removeteam" },
+		{ id = "editors", label = "Редакторы",   remove = "removeeditor" },
+		{ id = "npcs",    label = "NPC-классы",  remove = "removenpcclass" },
+	}
 
 	local function RequestData()
 		if not IsValid(currentEntity) then return end
@@ -435,6 +457,33 @@ if CLIENT then
 		end)
 	end
 
+	local function TabItems(tabId)
+		local out = {}
+
+		if tabId == "players" then
+			local ids = listData.PlayerIds or {}
+			for i, text in ipairs(listData.Players or {}) do
+				out[#out + 1] = { text = text, id = ids[i] or text }
+			end
+		elseif tabId == "teams" then
+			local ids = listData.TeamIds or {}
+			for i, text in ipairs(listData.Teams or {}) do
+				out[#out + 1] = { text = text, id = ids[i] or text }
+			end
+		elseif tabId == "editors" then
+			local ids = listData.EditorIds or {}
+			for i, text in ipairs(listData.Editors or {}) do
+				out[#out + 1] = { text = text, id = ids[i] or text }
+			end
+		elseif tabId == "npcs" then
+			for _, cls in ipairs(listData.NPCClasses or {}) do
+				out[#out + 1] = { text = cls, id = cls }
+			end
+		end
+
+		return out
+	end
+
 	net.Receive("ffwl_data", function()
 		if not IsValid(currentEntity) then return end
 		local ent = net.ReadEntity()
@@ -443,23 +492,8 @@ if CLIENT then
 		listData = net.ReadTable() or {}
 
 		if not IsValid(currentMenu) then return end
-		local listPanel = currentMenu.FFWL_ListPanel
-		if not IsValid(listPanel) then return end
-
-		listPanel:Clear()
-
-		for _, name in ipairs(listData.Teams or {}) do
-			listPanel:AddLine("[Команда] " .. tostring(name))
-		end
-		for _, text in ipairs(listData.Players or {}) do
-			listPanel:AddLine("[Игрок] " .. tostring(text))
-		end
-		for _, text in ipairs(listData.Editors or {}) do
-			listPanel:AddLine("[Редактор] " .. tostring(text))
-		end
-		for _, cls in ipairs(listData.NPCClasses or {}) do
-			listPanel:AddLine("[NPC-класс] " .. tostring(cls))
-		end
+		local refresh = currentMenu.FFWL_Refresh
+		if refresh then refresh() end
 	end)
 
 	net.Receive("ffwl_notify", function()
@@ -492,6 +526,91 @@ if CLIENT then
 		menu:Open()
 	end
 
+	local function AddActionForTab(tabId)
+		if tabId == "players" then
+			return function()
+				PlayerPickerMenu(function(sid) SendAction("addplayer", sid) end)
+			end
+		elseif tabId == "teams" then
+			return function()
+				local menu = DermaMenu()
+				for teamId, teamData in pairs(team.GetAllTeams()) do
+					menu:AddOption(teamData.Name, function() SendAction("addteam", tostring(teamId)) end)
+				end
+				menu:Open()
+			end
+		elseif tabId == "editors" then
+			return function()
+				PlayerPickerMenu(function(sid) SendAction("addeditor", sid) end)
+			end
+		elseif tabId == "npcs" then
+			return function()
+				Derma_StringRequest("FFWL", "Класс NPC (например npc_vj_automaton_trooper):", "", function(text)
+					if text ~= "" then SendAction("addnpcclass", text) end
+				end)
+			end
+		end
+		return function() end
+	end
+
+	local function RebuildList(listPanel)
+		listPanel:Clear()
+
+		local items = TabItems(activeTab)
+
+		if #items == 0 then
+			local empty = vgui.Create("DLabel", listPanel)
+			empty:Dock(TOP)
+			empty:SetTall(40)
+			empty:SetText("— пусто —")
+			empty:SetFont("FFWL_Item")
+			empty:SetTextColor(COL_DIM)
+			empty:SetContentAlignment(5)
+			return
+		end
+
+		for i, item in ipairs(items) do
+			local row = vgui.Create("Panel", listPanel)
+			row:Dock(TOP)
+			row:SetTall(26)
+			row:DockMargin(0, 0, 0, 3)
+
+			local rowPaint = function(self, w, h)
+				local bg = (i % 2 == 0) and COL_ROW_A or COL_ROW_B
+				if self:IsHovered() then bg = COL_HEADER end
+				draw.RoundedBox(3, 0, 0, w, h, bg)
+				draw.RoundedBoxEx(3, 0, 0, 3, h, COL_ACCENT, true, false, false, true)
+			end
+
+			local label = vgui.Create("DLabel", row)
+			label:Dock(FILL)
+			label:DockMargin(10, 0, 0, 0)
+			label:SetFont("FFWL_Item")
+			label:SetTextColor(COL_TEXT)
+			label:SetText(item.text)
+			label:SetTooltip(item.text)
+
+			local del = vgui.Create("DButton", row)
+			del:Dock(RIGHT)
+			del:SetWide(28)
+			del:SetText("")
+			del:SetTooltip("Убрать из списка")
+			del.Paint = function(self, w, h)
+				draw.SimpleText("✕", "FFWL_Item", w / 2, h / 2, self:IsHovered() and COL_RED or COL_DIM, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			end
+			del.DoClick = function()
+				for _, tab in ipairs(TABS) do
+					if tab.id == activeTab then
+						SendAction(tab.remove, item.id)
+						return
+					end
+				end
+			end
+
+			row.Paint = rowPaint
+		end
+	end
+
 	local function OpenMenu(ent)
 		if not IsValid(ent) then return end
 
@@ -501,71 +620,100 @@ if CLIENT then
 		end
 
 		currentEntity = ent
+		activeTab = "players"
 		RequestData()
 
 		if IsValid(currentMenu) then currentMenu:Remove() end
 
 		local frame = vgui.Create("DFrame")
 		currentMenu = frame
-		frame:SetSize(320, 460)
+		frame:SetSize(360, 470)
 		frame:Center()
-		frame:SetTitle("Forcefield Manager — вайтлист")
+		frame:SetTitle("")
 		frame:MakePopup()
 
-		local listPanel = vgui.Create("DListView", frame)
-		listPanel:Dock(BOTTOM)
-		listPanel:SetTall(150)
-		listPanel:SetMultiSelect(false)
-		listPanel:AddColumn("Текущий вайтлист")
-		frame.FFWL_ListPanel = listPanel
-
-		local function AddButton(text, onClick)
-			local button = vgui.Create("DButton", frame)
-			button:SetText(text)
-			button:Dock(TOP)
-			button:DockMargin(6, 3, 6, 0)
-			button:SetTall(24)
-			button.DoClick = onClick
-			return button
+		frame.Paint = function(self, w, h)
+			draw.RoundedBox(6, 0, 0, w, h, COL_BG)
+			draw.RoundedBoxEx(6, 0, 0, w, 30, COL_HEADER, true, true, false, false)
+			draw.RoundedBoxEx(6, 0, 30, w, 2, COL_ACCENT, false, false, true, true)
+			draw.SimpleText("FORCEFIELD MANAGER", "FFWL_Title", 14, 15, COL_ACCENT2, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			draw.SimpleText(tostring(ent), "FFWL_Item", w - 14, 15, COL_DIM, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
 		end
 
-		AddButton("Add Player", function()
-			PlayerPickerMenu(function(sid) SendAction("addplayer", sid) end)
-		end)
+		-- Вкладки
+		local tabBar = vgui.Create("Panel", frame)
+		tabBar:Dock(TOP)
+		tabBar:SetTall(30)
+		tabBar:DockMargin(10, 12, 10, 0)
 
-		AddButton("Remove Player", function()
-			IDPickerMenu(listData.PlayerIds or {}, function(sid) SendAction("removeplayer", sid) end)
-		end)
-
-		AddButton("Add Team", function()
-			local menu = DermaMenu()
-			for teamId, teamData in pairs(team.GetAllTeams()) do
-				menu:AddOption(teamData.Name, function() SendAction("addteam", tostring(teamId)) end)
+		for _, tab in ipairs(TABS) do
+			local btn = vgui.Create("DButton", tabBar)
+			btn:Dock(LEFT)
+			btn:SetWide(80)
+			btn:SetText("")
+			btn.Paint = function(self, w, h)
+				local isActive = (activeTab == tab.id)
+				if isActive or self:IsHovered() then
+					draw.RoundedBox(4, 0, 0, w, h, COL_HEADER)
+				end
+				if isActive then
+					draw.RoundedBoxEx(4, 0, h - 3, w, 3, COL_ACCENT, false, false, true, true)
+				end
+				local col = isActive and COL_ACCENT2 or COL_DIM
+				if self:IsHovered() and not isActive then col = COL_TEXT end
+				draw.SimpleText(tab.label, "FFWL_Tab", w / 2, h / 2 - 1, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 			end
-			menu:Open()
-		end)
+			btn.DoClick = function()
+				if activeTab == tab.id then return end
+				activeTab = tab.id
+				if IsValid(currentMenu) and currentMenu.FFWL_Refresh then currentMenu.FFWL_Refresh() end
+			end
+		end
 
-		AddButton("Remove Team", function()
-			IDPickerMenu(listData.TeamIds or {}, function(tid) SendAction("removeteam", tid) end)
-		end)
+		-- Список записей
+		local scroll = vgui.Create("DScrollPanel", frame)
+		scroll:Dock(FILL)
+		scroll:DockMargin(10, 10, 10, 0)
+		frame.FFWL_ListPanel = scroll
 
-		AddButton("Add Editor", function()
-			PlayerPickerMenu(function(sid) SendAction("addeditor", sid) end)
-		end)
+		local vbar = scroll:GetVBar()
+		vbar:SetWide(6)
+		vbar.Paint = function(self, w, h) draw.RoundedBox(3, 0, 0, w, h, COL_HEADER) end
+		vbar.btnGrip.Paint = function(self, w, h) draw.RoundedBox(3, 0, 0, w, h, COL_LINE) end
+		vbar.btnUp.Paint = function() end
+		vbar.btnDown.Paint = function() end
 
-		AddButton("Remove Editor", function()
-			IDPickerMenu(listData.EditorIds or {}, function(sid) SendAction("removeeditor", sid) end)
-		end)
+		frame.FFWL_Refresh = function()
+			if IsValid(frame) then RebuildList(scroll) end
+		end
 
-		AddButton("Add NPC Class", function()
-			Derma_StringRequest("FFWL", "Класс NPC (например npc_vj_automaton_trooper):", "", function(text)
-				if text ~= "" then SendAction("addnpcclass", text) end
-			end)
-		end)
+		-- Кнопка добавления (зависит от вкладки)
+		local addBtn = vgui.Create("DButton", frame)
+		addBtn:Dock(BOTTOM)
+		addBtn:SetTall(32)
+		addBtn:DockMargin(10, 8, 10, 10)
+		addBtn:SetText("")
+		addBtn.Paint = function(self, w, h)
+			local hovered = self:IsHovered()
+			draw.RoundedBox(4, 0, 0, w, h, hovered and COL_ACCENT or COL_HEADER)
+			local label, col
+			if activeTab == "players" then
+				label, col = "ADD PLAYER", COL_ACCENT2
+			elseif activeTab == "teams" then
+				label, col = "ADD TEAM", COL_ACCENT2
+			elseif activeTab == "editors" then
+				label, col = "ADD EDITOR", COL_ACCENT2
+			else
+				label, col = "ADD NPC CLASS", COL_ACCENT2
+			end
+			if hovered then col = Color(15, 20, 25) end
+			draw.SimpleText(label, "FFWL_Tab", w / 2, h / 2, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		end
+		addBtn.DoClick = function()
+			AddActionForTab(activeTab)()
+		end
 
-		AddButton("Remove NPC Class", function()
-			IDPickerMenu(listData.NPCClasses or {}, function(cls) SendAction("removenpcclass", cls) end)
-		end)
+		RebuildList(scroll)
 	end
 
 	-- Клавиша E по полю открывает меню (без автоповтора)
